@@ -14,6 +14,7 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+mod internal;
 pub mod types;
 mod weights;
 
@@ -57,11 +58,17 @@ pub mod pallet {
 	#[pallet::getter(fn creators)]
 	pub type Creators<T> = StorageMap<_, Blake2_128Concat, CreatorId, Creator<T>>;
 
-	/// Creators for account
+	/// Creator ids for account.
+	/// Maps Accounts to their creator accounts.
 	#[pallet::storage]
-	#[pallet::getter(fn creators_for_account)]
-	pub type CreatorsForAccount<T: Config> =
-		StorageMap<_, Blake2_128Concat, T::AccountId, BoundedVec<CreatorId, T::MaxCreatorAccounts>>;
+	#[pallet::getter(fn creator_ids_for_account)]
+	pub type CreatorIdsForAccount<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		T::AccountId,
+		BoundedVec<CreatorId, T::MaxCreatorAccounts>,
+		ValueQuery,
+	>;
 
 	/// Launch tokens
 	#[pallet::storage]
@@ -92,6 +99,7 @@ pub mod pallet {
 
 	// EVENTS
 	#[pallet::event]
+	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// new creator account created
 		NewCreator,
@@ -168,17 +176,33 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Create new creator account.
-		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1, 1))]
-		pub fn create_account(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1, 2))]
+		pub fn create_account(origin: OriginFor<T>, creator_id: CreatorId) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			Self::add_new_creator_to_account(creator_id, account)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::NewCreator);
+
+			Ok(())
 		}
 
 		/// Drop creator account.
 		///
 		/// Keeps creator account alive if tokens have been created by the creator account.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn drop_account(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1, 2))]
+		pub fn drop_account(origin: OriginFor<T>, creator_id: CreatorId) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			Self::remove_creator_from_account(creator_id, account)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::DroppedCreator);
+
+			Ok(())
 		}
 
 		/// Create new token.

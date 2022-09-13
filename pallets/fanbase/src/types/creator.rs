@@ -10,3 +10,14 @@ pub struct Creator<T: Config> {
 	pub id: CreatorId,
 	pub owner: Option<T::AccountId>,
 }
+
+impl<T: Config> Creator<T> {
+	pub fn new(id: CreatorId, owner: T::AccountId) -> Self {
+		Self { id, owner: Some(owner) }
+	}
+
+	/// Remove owner from creator by setting owner field to `None`
+	pub fn disconnect(&mut self) {
+		self.owner = None
+	}
+}
