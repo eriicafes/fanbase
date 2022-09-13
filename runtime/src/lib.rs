@@ -265,9 +265,19 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
+parameter_types! {
+	pub const MaxCreatorAccounts: u32 = 100;
+	pub const MaxLaunchTokens: u32 = u32::MAX;
+	pub const MaxTokens: u32 = u32::MAX;
+}
+
 /// Configure the pallet-fanbase in pallets/fanbase.
 impl pallet_fanbase::Config for Runtime {
 	type Event = Event;
+	type Currency = Balances;
+	type MaxCreatorAccounts = MaxCreatorAccounts;
+	type MaxLaunchTokens = MaxLaunchTokens;
+	type MaxTokens = MaxTokens;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

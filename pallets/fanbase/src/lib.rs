@@ -14,89 +14,231 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+pub mod types;
+mod weights;
+
+use types::{Creator, CreatorId, LaunchToken, Token, TokenId};
+
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::pallet_prelude::*;
+	use super::*;
+	use frame_support::{pallet_prelude::*, traits::Currency};
 	use frame_system::pallet_prelude::*;
 
 	#[pallet::pallet]
 	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
 
-	/// Configure the pallet by specifying the parameters and types on which it depends.
+	// CONFIG
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
-		/// Because this pallet emits events, it depends on the runtime's definition of an event.
+		/// Emit events.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+
+		/// Internal currency.
+		type Currency: Currency<Self::AccountId>;
+
+		/// Max creator accounts for account
+		#[pallet::constant]
+		type MaxCreatorAccounts: Get<u32>;
+
+		/// Max launch tokens for creator
+		#[pallet::constant]
+		type MaxLaunchTokens: Get<u32>;
+
+		/// Max tokens for account
+		#[pallet::constant]
+		type MaxTokens: Get<u32>;
 	}
 
-	// The pallet's runtime storage items.
-	// https://docs.substrate.io/main-docs/build/runtime-storage/
+	// STORAGE ITEMS
+	/// Creator accounts
 	#[pallet::storage]
-	#[pallet::getter(fn something)]
-	// Learn more about declaring storage items:
-	// https://docs.substrate.io/main-docs/build/runtime-storage/#declaring-storage-items
-	pub type Something<T> = StorageValue<_, u32>;
+	#[pallet::getter(fn creators)]
+	pub type Creators<T> = StorageMap<_, Blake2_128Concat, CreatorId, Creator<T>>;
 
-	// Pallets use events to inform users when important changes are made.
-	// https://docs.substrate.io/main-docs/build/events-errors/
+	/// Creators for account
+	#[pallet::storage]
+	#[pallet::getter(fn creators_for_account)]
+	pub type CreatorsForAccount<T: Config> =
+		StorageMap<_, Blake2_128Concat, T::AccountId, BoundedVec<CreatorId, T::MaxCreatorAccounts>>;
+
+	/// Launch tokens
+	#[pallet::storage]
+	#[pallet::getter(fn launch_tokens)]
+	pub type LaunchTokens<T: Config> = StorageMap<_, Blake2_128Concat, TokenId, LaunchToken<T>>;
+
+	/// Launch tokens for creator
+	#[pallet::storage]
+	#[pallet::getter(fn launch_tokens_for_creator)]
+	pub type LaunchTokensForCreator<T: Config> =
+		StorageMap<_, Blake2_128Concat, CreatorId, BoundedVec<TokenId, T::MaxLaunchTokens>>;
+
+	/// Tokens
+	#[pallet::storage]
+	#[pallet::getter(fn tokens)]
+	pub type Tokens<T: Config> = StorageMap<_, Blake2_128Concat, TokenId, Token<T>>;
+
+	/// Tokens for account
+	#[pallet::storage]
+	#[pallet::getter(fn tokens_for_creator)]
+	pub type TokensForAccount<T: Config> =
+		StorageMap<_, Blake2_128Concat, T::AccountId, BoundedVec<TokenId, T::MaxTokens>>;
+
+	/// Token issuance
+	#[pallet::storage]
+	#[pallet::getter(fn issuance_nonce)]
+	pub type IssuanceNonce<T> = StorageValue<_, TokenId>;
+
+	// EVENTS
 	#[pallet::event]
-	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
-		SomethingStored(u32, T::AccountId),
+		/// new creator account created
+		NewCreator,
+
+		/// creator account dropped
+		DroppedCreator,
+
+		/// new token minted
+		TokenCreated,
+
+		/// token acquired for the first time
+		TokenInitialCollection,
+
+		/// token transferred to new owner
+		TokenTransferred,
+
+		/// token listed on market
+		TokenListed,
+
+		/// token unlisted from market
+		TokenUnlisted,
+
+		/// token launch price updated
+		TokenLaunchPriceUpdated,
+
+		/// token price updated
+		TokenPriceUpdated,
+
+		/// token permanently destroyed
+		TokenDestroyed,
 	}
 
-	// Errors inform users that something went wrong.
+	// ERRORS
 	#[pallet::error]
 	pub enum Error<T> {
-		/// Error names should be descriptive.
-		NoneValue,
-		/// Errors should have helpful documentation associated with them.
-		StorageOverflow,
+		/// Signing account is not the owner of this item
+		NotOwner,
+
+		/// Creator account already taken
+		CreatorAccountTaken,
+
+		/// Token sold out of launch
+		TokenSoldOut,
+
+		/// Token not for sale
+		TokenNotForSale,
+
+		/// Bid price too low to buy token
+		BidPriceTooLow,
+
+		/// Cannot set token supply to zero
+		ZeroSupply,
+
+		/// Cannot set token price to zero
+		ZeroPrice,
+
+		/// Cannot transfer token to self
+		TransferToSelf,
+
+		/// Max number of creator accounts reached
+		MaxCreatorAccountsReached,
+
+		/// Max number of launch tokens reached
+		MaxLaunchTokensReached,
+
+		/// Max number of tokens reached
+		MaxTokensReached,
+
+		/// Max tokens minted
+		TokensOverflow,
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
+	// CALLS
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
-		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/main-docs/build/origins/
-			let who = ensure_signed(origin)?;
-
-			// Update storage.
-			<Something<T>>::put(something);
-
-			// Emit an event.
-			Self::deposit_event(Event::SomethingStored(something, who));
-			// Return a successful DispatchResultWithPostInfo
-			Ok(())
+		/// Create new creator account.
+		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1, 1))]
+		pub fn create_account(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
 		}
 
-		/// An example dispatchable that may throw a custom error.
-		#[pallet::weight(10_000 + T::DbWeight::get().reads_writes(1,1))]
-		pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
-			let _who = ensure_signed(origin)?;
+		/// Drop creator account.
+		///
+		/// Keeps creator account alive if tokens have been created by the creator account.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn drop_account(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
 
-			// Read a value from storage.
-			match <Something<T>>::get() {
-				// Return an error if the value has not been set.
-				None => return Err(Error::<T>::NoneValue.into()),
-				Some(old) => {
-					// Increment the value read from storage; will error in the event of overflow.
-					let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-					// Update the value in storage with the incremented result.
-					<Something<T>>::put(new);
-					Ok(())
-				},
-			}
+		/// Create new token.
+		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1,1))]
+		pub fn mint(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Gift token to account first hand.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn launch_gift(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Buy token from creator first hand.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn launch_buy(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Buy token from market.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn buy(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Transfer token to account.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn transfer(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// List token on market.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn list(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Unlist token from market.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn unlist(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Update launch price of token.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn set_launch_price(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Update price of token.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn set_price(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
+		}
+
+		/// Destroy token.
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		pub fn burn(_origin: OriginFor<T>) -> DispatchResult {
+			todo!()
 		}
 	}
 }
