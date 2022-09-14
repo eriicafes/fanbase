@@ -8,10 +8,10 @@ impl<T: Config> Pallet<T> {
 		account: T::AccountId,
 	) -> Result<(), Error<T>> {
 		// verify creator account does not exist
-		ensure!(Self::creators(creator_id).is_none(), Error::<T>::CreatorAccountTaken);
+		ensure!(Self::creators(&creator_id).is_none(), Error::<T>::CreatorAccountTaken);
 
 		// add creator id to account
-		CreatorIdsForAccount::<T>::mutate(account.clone(), |creator_ids| {
+		CreatorIdsForAccount::<T>::try_mutate(account.clone(), |creator_ids| {
 			// return error if unable to append creator account
 			creator_ids
 				.try_push(creator_id)
@@ -31,31 +31,43 @@ impl<T: Config> Pallet<T> {
 		creator_id: CreatorId,
 		account: T::AccountId,
 	) -> Result<(), Error<T>> {
-		let mut creator_ids = Self::creator_ids_for_account(account.clone());
-
 		// verify account owns creator account
-		if let Some(index) = creator_ids.iter().position(|id| *id == creator_id) {
-			// disconnect and save creator account
-			Creators::<T>::mutate(creator_id, |creator| {
-				// this is ok because we are sure to only add creator ids of creator accounts that have been saved
-				creator
-					.as_mut()
-					.expect("Creator removed without clearing references")
-					.disconnect();
-			});
+		Self::ensure_account_owns_creator(&account, &creator_id)?;
 
-			// remove creator id from account
-			// `swap_remove` because we do not care about ordering and it is faster than `remove`
-			creator_ids.swap_remove(index);
-			// update storage
-			CreatorIdsForAccount::<T>::insert(account, creator_ids);
-
-			// remove if no token references to this creator
-			// TODO! check tokens created by this creator and remove creator if none
-
-			Ok(())
+		// remove if no token references to this creator
+		if Self::launch_token_ids_for_creator(creator_id).len() == 0 {
+			// remove since no launch tokens created by this creator
+			Creators::<T>::remove(creator_id);
 		} else {
-			Err(Error::<T>::NotOwner)?
+			// disconnect owner from creator
+			Creators::<T>::mutate(creator_id, |creator| {
+				// unwrap because we are sure creator exists
+				creator.as_mut().unwrap().disconnect();
+			})
 		}
+
+		// remove creator id from account
+		CreatorIdsForAccount::<T>::mutate(account, |creator_ids| {
+			if let Some(index) = creator_ids.iter().position(|id| *id == creator_id) {
+				// `swap_remove` because we do not care about ordering and it is faster than `remove`
+				creator_ids.swap_remove(index);
+			}
+		});
+
+		Ok(())
+	}
+
+	/// Ensure account owns creator account.
+	pub fn ensure_account_owns_creator(
+		account: &T::AccountId,
+		creator_id: &CreatorId,
+	) -> Result<(), Error<T>> {
+		ensure!(
+			Self::creators(creator_id)
+				.map_or(false, |creator| creator.owner == Some(account.clone())),
+			Error::<T>::NotOwner
+		);
+
+		Ok(())
 	}
 }

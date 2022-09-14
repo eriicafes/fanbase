@@ -18,12 +18,17 @@ mod internal;
 pub mod types;
 mod weights;
 
-use types::{Creator, CreatorId, LaunchToken, Token, TokenId};
+use types::{
+	aliases::BalanceOf, Creator, CreatorId, LaunchToken, LaunchTokenMetadata, Token, TokenId,
+};
 
 #[frame_support::pallet]
 pub mod pallet {
 	use super::*;
-	use frame_support::{pallet_prelude::*, traits::Currency};
+	use frame_support::{
+		pallet_prelude::*,
+		traits::{Currency, ExistenceRequirement::KeepAlive},
+	};
 	use frame_system::pallet_prelude::*;
 
 	#[pallet::pallet]
@@ -70,82 +75,114 @@ pub mod pallet {
 		ValueQuery,
 	>;
 
-	/// Launch tokens
+	/// Launch tokens for creators.
 	#[pallet::storage]
 	#[pallet::getter(fn launch_tokens)]
 	pub type LaunchTokens<T: Config> = StorageMap<_, Blake2_128Concat, TokenId, LaunchToken<T>>;
 
-	/// Launch tokens for creator
+	/// Launch token ids for creator.
+	/// Maps creators to their launch tokens.
 	#[pallet::storage]
-	#[pallet::getter(fn launch_tokens_for_creator)]
-	pub type LaunchTokensForCreator<T: Config> =
-		StorageMap<_, Blake2_128Concat, CreatorId, BoundedVec<TokenId, T::MaxLaunchTokens>>;
+	#[pallet::getter(fn launch_token_ids_for_creator)]
+	pub type LaunchTokenIdsForCreator<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		CreatorId,
+		BoundedVec<TokenId, T::MaxLaunchTokens>,
+		ValueQuery,
+	>;
 
-	/// Tokens
+	/// Tokens for accounts.
 	#[pallet::storage]
 	#[pallet::getter(fn tokens)]
 	pub type Tokens<T: Config> = StorageMap<_, Blake2_128Concat, TokenId, Token<T>>;
 
-	/// Tokens for account
+	/// Token ids for accounts.
+	/// Maps accounts to their tokens.
 	#[pallet::storage]
-	#[pallet::getter(fn tokens_for_creator)]
-	pub type TokensForAccount<T: Config> =
-		StorageMap<_, Blake2_128Concat, T::AccountId, BoundedVec<TokenId, T::MaxTokens>>;
+	#[pallet::getter(fn token_ids_for_account)]
+	pub type TokenIdsForAccount<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		T::AccountId,
+		BoundedVec<TokenId, T::MaxTokens>,
+		ValueQuery,
+	>;
 
-	/// Token issuance
+	/// Track issued launch tokens count
+	#[pallet::storage]
+	#[pallet::getter(fn launch_issuance_nonce)]
+	pub type LaunchIssuanceNonce<T> = StorageValue<_, TokenId, ValueQuery>;
+
+	/// Track issued tokens count
 	#[pallet::storage]
 	#[pallet::getter(fn issuance_nonce)]
-	pub type IssuanceNonce<T> = StorageValue<_, TokenId>;
+	pub type IssuanceNonce<T> = StorageValue<_, TokenId, ValueQuery>;
 
 	// EVENTS
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// new creator account created
+		/// New creator account created
 		NewCreator,
 
-		/// creator account dropped
+		/// Creator account dropped
 		DroppedCreator,
 
-		/// new token minted
+		/// New token minted
 		TokenCreated,
 
-		/// token acquired for the first time
+		/// Token acquired for the first time
 		TokenInitialCollection,
 
-		/// token transferred to new owner
+		/// Token transferred to new owner
 		TokenTransferred,
 
-		/// token listed on market
+		/// Token listed on market
 		TokenListed,
 
-		/// token unlisted from market
+		/// Token unlisted from market
 		TokenUnlisted,
 
-		/// token launch price updated
+		/// Token launch price updated
 		TokenLaunchPriceUpdated,
 
-		/// token price updated
+		/// Token price updated
 		TokenPriceUpdated,
 
-		/// token permanently destroyed
+		/// Token permanently destroyed
 		TokenDestroyed,
 	}
 
 	// ERRORS
 	#[pallet::error]
 	pub enum Error<T> {
+		/// Insufficient funds to complete buy operation
+		InsufficientFunds,
+
 		/// Signing account is not the owner of this item
 		NotOwner,
 
 		/// Creator account already taken
 		CreatorAccountTaken,
 
+		/// Token not found
+		TokenNotFound,
+
 		/// Token sold out of launch
 		TokenSoldOut,
 
 		/// Token not for sale
 		TokenNotForSale,
+
+		/// Token creator is unavailable
+		TokenUnavailable,
+
+		/// Token not listed
+		TokenNotListed,
+
+		/// Token already listed
+		TokenAlreadyListed,
 
 		/// Bid price too low to buy token
 		BidPriceTooLow,
@@ -167,6 +204,9 @@ pub mod pallet {
 
 		/// Max number of tokens reached
 		MaxTokensReached,
+
+		/// Max launch tokens minted
+		LaunchTokensOverflow,
 
 		/// Max tokens minted
 		TokensOverflow,
@@ -207,62 +247,260 @@ pub mod pallet {
 
 		/// Create new token.
 		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1,1))]
-		pub fn mint(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn mint(
+			origin: OriginFor<T>,
+			creator_id: CreatorId,
+			price: BalanceOf<T>,
+			metadata: LaunchTokenMetadata,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// verify account owns creator account
+			Self::ensure_account_owns_creator(&account, &creator_id)?;
+
+			// mint launch token
+			Self::unchecked_mint(creator_id, price, metadata)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenCreated);
+
+			Ok(())
 		}
 
 		/// Gift token to account first hand.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn launch_gift(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn launch_gift(
+			origin: OriginFor<T>,
+			creator_id: CreatorId,
+			launch_token_id: TokenId,
+			receiver: T::AccountId,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// verify account owns creator account
+			Self::ensure_account_owns_creator(&account, &creator_id)?;
+			// verify creator account owns launch token
+			Self::ensure_creator_owns_launch_token(&creator_id, &launch_token_id)?;
+
+			// transfer token to receiver
+			Self::unchecked_launch_transfer(&receiver, launch_token_id)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenInitialCollection);
+
+			Ok(())
 		}
 
 		/// Buy token from creator first hand.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn launch_buy(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn launch_buy(
+			origin: OriginFor<T>,
+			launch_token_id: TokenId,
+			bid_price: BalanceOf<T>,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// ensure sufficient balance
+			ensure!(
+				T::Currency::free_balance(&account) >= bid_price,
+				Error::<T>::InsufficientFunds
+			);
+
+			let launch_token =
+				Self::launch_tokens(launch_token_id).ok_or(Error::<T>::TokenNotFound)?;
+
+			// get launch token owner
+			let launch_token_owner = Self::creators(launch_token.creator)
+				.and_then(|creator| creator.owner)
+				.ok_or(Error::<T>::TokenUnavailable)?;
+
+			// ensure bid price is enough to cover purchase
+			ensure!(bid_price >= launch_token.price, Error::<T>::BidPriceTooLow);
+
+			// transfer token to receiver from launch token
+			Self::unchecked_launch_transfer(&account, launch_token_id)?;
+
+			// transfer funds
+			T::Currency::transfer(&account, &launch_token_owner, bid_price, KeepAlive)
+				.expect("Funds not transferred after token transfer");
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenInitialCollection);
+
+			Ok(())
 		}
 
 		/// Buy token from market.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn buy(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn buy(
+			origin: OriginFor<T>,
+			token_id: TokenId,
+			bid_price: BalanceOf<T>,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// ensure sufficient balance
+			ensure!(
+				T::Currency::free_balance(&account) >= bid_price,
+				Error::<T>::InsufficientFunds
+			);
+
+			let token = Self::tokens(token_id).ok_or(Error::<T>::TokenNotFound)?;
+
+			// get if token price, return error if not for sale
+			let token_price = token.price.ok_or(Error::<T>::TokenNotForSale)?;
+
+			// ensure bid price is enough to cover purchase
+			ensure!(bid_price >= token_price, Error::<T>::BidPriceTooLow);
+
+			// transfer token from owner to account
+			Self::unchecked_transfer(&token.owner, &account, token_id)?;
+
+			// transfer funds
+			T::Currency::transfer(&account, &token.owner, bid_price, KeepAlive)
+				.expect("Funds not transferred after token transfer");
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenTransferred);
+
+			Ok(())
 		}
 
 		/// Transfer token to account.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn transfer(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn transfer(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// check if token exists and return `NotFound` error early
+			Self::tokens(token_id).ok_or(Error::<T>::TokenNotFound)?;
+
+			// ensure account owns token
+			Self::ensure_account_owns_token(&account, &token_id)?;
+
+			// transfer token to receiver
+			Self::unchecked_transfer(&account, &account, token_id)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenTransferred);
+
+			Ok(())
 		}
 
 		/// List token on market.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn list(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn list(
+			origin: OriginFor<T>,
+			token_id: TokenId,
+			price: BalanceOf<T>,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// ensure account owns token
+			Self::ensure_account_owns_token(&account, &token_id)?;
+
+			// ensure token does not have a price
+			ensure!(Self::get_token_price(&token_id).is_none(), Error::<T>::TokenAlreadyListed);
+
+			Self::unchecked_set_price(token_id, Some(price))?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenListed);
+
+			Ok(())
 		}
 
 		/// Unlist token from market.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn unlist(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn unlist(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// ensure account owns token
+			Self::ensure_account_owns_token(&account, &token_id)?;
+
+			// ensure token has price
+			ensure!(Self::get_token_price(&token_id).is_some(), Error::<T>::TokenNotListed);
+
+			// update token price
+			Self::unchecked_set_price(token_id, None)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenUnlisted);
+
+			Ok(())
 		}
 
 		/// Update launch price of token.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn set_launch_price(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn set_launch_price(
+			origin: OriginFor<T>,
+			creator_id: CreatorId,
+			launch_token_id: TokenId,
+			price: BalanceOf<T>,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// verify account owns creator account
+			Self::ensure_account_owns_creator(&account, &creator_id)?;
+			// verify creator account owns launch token
+			Self::ensure_creator_owns_launch_token(&creator_id, &launch_token_id)?;
+
+			// update launch token price
+			Self::unchecked_set_launch_price(launch_token_id, price)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenLaunchPriceUpdated);
+
+			Ok(())
 		}
 
 		/// Update price of token.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn set_price(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn set_price(
+			origin: OriginFor<T>,
+			token_id: TokenId,
+			price: BalanceOf<T>,
+		) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// ensure account owns token
+			Self::ensure_account_owns_token(&account, &token_id)?;
+
+			// ensure token has price
+			ensure!(Self::get_token_price(&token_id).is_some(), Error::<T>::TokenNotListed);
+
+			// update token price
+			Self::unchecked_set_price(token_id, Some(price))?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenPriceUpdated);
+
+			Ok(())
 		}
 
 		/// Destroy token.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
-		pub fn burn(_origin: OriginFor<T>) -> DispatchResult {
-			todo!()
+		pub fn burn(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
+			// allow only signed origin
+			let account = ensure_signed(origin)?;
+
+			// ensure account owns token
+			Self::ensure_account_owns_token(&account, &token_id)?;
+
+			Self::unchecked_burn(token_id)?;
+
+			// emit events
+			Self::deposit_event(Event::<T>::TokenDestroyed);
+
+			Ok(())
 		}
 	}
 }

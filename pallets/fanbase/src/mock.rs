@@ -1,5 +1,5 @@
 use crate as pallet_fanbase;
-use frame_support::traits::{ConstU128, ConstU16, ConstU32, ConstU64, ConstU8};
+use frame_support::traits::{ConstU128, ConstU16, ConstU32, ConstU64};
 use frame_system as system;
 use sp_core::H256;
 use sp_runtime::{
