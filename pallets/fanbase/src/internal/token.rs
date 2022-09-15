@@ -11,6 +11,12 @@ impl<T: Config> Pallet<T> {
 	/// Returns created launch token id.
 	///
 	/// *Unchecked!*
+	///
+	/// **Storage ops**
+	/// - One storage read to get launch token issuance `LaunchIssuanceNonce<T>`
+	/// - One storage read-write to add launch token id to creator `LaunchTokenIdsForCreator<T>`
+	/// - One storage write to save launch token `LaunchTokens<T>`
+	/// - One storage write to update launch token issuance `LaunchIssuanceNonce<T>`
 	pub fn unchecked_mint(
 		creator_id: CreatorId,
 		price: BalanceOf<T>,
@@ -43,6 +49,14 @@ impl<T: Config> Pallet<T> {
 	/// Get token from launch token and transfer to account.
 	///
 	/// *Unchecked!*
+	///
+	/// **Storage ops**
+	/// - One storage read to get token issuance `IssuanceNonce<T>`
+	/// - One storage read to get launch token by id `LaunchTokens<T>`
+	/// - One storage read-write to add token id to receiver account `TokenIdsForAccount<T>`
+	/// - One storage write to save token `Tokens<T>`
+	/// - One storage write to update launch token internal issuance `LaunchTokens<T>`
+	/// - One storage write to update token issuance `IssuanceNonce<T>`
 	pub fn unchecked_launch_transfer(
 		receiver: &T::AccountId,
 		launch_token_id: TokenId,
@@ -85,6 +99,12 @@ impl<T: Config> Pallet<T> {
 	/// Remove token from owner and transfer to receiver.
 	///
 	/// *Unchecked!*
+	///
+	/// **Storage ops**
+	/// - One storage read to get token by id `Tokens<T>`
+	/// - One storage read-write to add token id to receiver account `TokenIdsForAccount<T>`
+	/// - One storage read-write to remove token id from owner account `TokenIdsForAccount<T>`
+	/// - One storage write to update token owner `Tokens<T>`
 	pub fn unchecked_transfer(
 		owner: &T::AccountId,
 		receiver: &T::AccountId,
@@ -117,6 +137,9 @@ impl<T: Config> Pallet<T> {
 	/// Set price for launch token.
 	///
 	/// *Unchecked!*
+	///
+	/// **Storage ops**
+	/// - One storage read-write to update launch token price `LaunchTokens<T>`
 	pub fn unchecked_set_launch_price(
 		launch_token_id: TokenId,
 		price: BalanceOf<T>,
@@ -135,6 +158,9 @@ impl<T: Config> Pallet<T> {
 	/// Set price for token.
 	///
 	/// *Unchecked!*
+	///
+	/// **Storage ops**
+	/// - One storage read-write to update token price `Tokens<T>`
 	pub fn unchecked_set_price(
 		token_id: TokenId,
 		price: Option<BalanceOf<T>>,
@@ -153,6 +179,12 @@ impl<T: Config> Pallet<T> {
 	/// Destroy token.
 	///
 	/// *Unchecked!*
+	///
+	/// **Storage ops**
+	/// - One storage read to get token by id `Tokens<T>`
+	/// - One storage read-write to remove token id from token owner account `TokenIdsForAccount<T>`
+	/// - One storage write to remove token `Tokens<T>`
+	/// - One storage read-write to update launch token internal issuance `LaunchTokens<T>`
 	pub fn unchecked_burn(token_id: TokenId) -> Result<(), Error<T>> {
 		let token = Self::tokens(token_id).ok_or(Error::<T>::TokenNotFound)?;
 
@@ -177,6 +209,9 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Ensure creator account owns launch token.
+	///
+	/// **Storage ops**
+	/// - One storage read to get launch token by id `LaunchTokens<T>`
 	pub fn ensure_creator_owns_launch_token(
 		creator_id: &CreatorId,
 		launch_token_id: &TokenId,
@@ -191,6 +226,9 @@ impl<T: Config> Pallet<T> {
 	}
 
 	/// Ensure account owns token.
+	///
+	/// **Storage ops**
+	/// - One storage read to get token by id `Tokens<T>`
 	pub fn ensure_account_owns_token(
 		account: &T::AccountId,
 		token_id: &TokenId,
@@ -203,7 +241,21 @@ impl<T: Config> Pallet<T> {
 		Ok(())
 	}
 
-	/// Get token price of token if available else return `None`.
+	/// Get launch token owner if launch token exists and it's creator's owner has not been disconnected.
+	///
+	/// **Storage ops**
+	/// - One storage read to get launch token by id `LaunchTokens<T>`
+	/// - One storage read to get creator of launch token `Creators<T>`
+	pub fn get_launch_token_owner(launch_token_id: &TokenId) -> Option<T::AccountId> {
+		Self::launch_tokens(launch_token_id).and_then(|launch_token| {
+			Self::creators(launch_token.creator).and_then(|creator| creator.owner)
+		})
+	}
+
+	/// Get token price if token exists and has a price.
+	///
+	/// **Storage ops**
+	/// - One storage read to get token by id `Tokens<T>`
 	pub fn get_token_price(token_id: &TokenId) -> Option<BalanceOf<T>> {
 		Self::tokens(token_id).and_then(|token| token.price)
 	}

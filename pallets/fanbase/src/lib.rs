@@ -216,7 +216,7 @@ pub mod pallet {
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		/// Create new creator account.
-		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1, 2))]
+		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(2, 2))]
 		pub fn create_account(origin: OriginFor<T>, creator_id: CreatorId) -> DispatchResult {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
@@ -232,7 +232,7 @@ pub mod pallet {
 		/// Drop creator account.
 		///
 		/// Keeps creator account alive if tokens have been created by the creator account.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1, 2))]
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(3, 2))]
 		pub fn drop_account(origin: OriginFor<T>, creator_id: CreatorId) -> DispatchResult {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
@@ -246,7 +246,7 @@ pub mod pallet {
 		}
 
 		/// Create new token.
-		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::HIGH + T::DbWeight::get().reads_writes(3, 3))]
 		pub fn mint(
 			origin: OriginFor<T>,
 			creator_id: CreatorId,
@@ -269,7 +269,7 @@ pub mod pallet {
 		}
 
 		/// Gift token to account first hand.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(4, 4))]
 		pub fn launch_gift(
 			origin: OriginFor<T>,
 			creator_id: CreatorId,
@@ -294,7 +294,7 @@ pub mod pallet {
 		}
 
 		/// Buy token from creator first hand.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(5, 4))]
 		pub fn launch_buy(
 			origin: OriginFor<T>,
 			launch_token_id: TokenId,
@@ -313,8 +313,7 @@ pub mod pallet {
 				Self::launch_tokens(launch_token_id).ok_or(Error::<T>::TokenNotFound)?;
 
 			// get launch token owner
-			let launch_token_owner = Self::creators(launch_token.creator)
-				.and_then(|creator| creator.owner)
+			let launch_token_owner = Self::get_launch_token_owner(&launch_token_id)
 				.ok_or(Error::<T>::TokenUnavailable)?;
 
 			// ensure bid price is enough to cover purchase
@@ -334,7 +333,7 @@ pub mod pallet {
 		}
 
 		/// Buy token from market.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(4, 3))]
 		pub fn buy(
 			origin: OriginFor<T>,
 			token_id: TokenId,
@@ -371,7 +370,7 @@ pub mod pallet {
 		}
 
 		/// Transfer token to account.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(3, 3))]
 		pub fn transfer(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
@@ -392,7 +391,7 @@ pub mod pallet {
 		}
 
 		/// List token on market.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::LOW + T::DbWeight::get().reads_writes(1, 1))]
 		pub fn list(
 			origin: OriginFor<T>,
 			token_id: TokenId,
@@ -416,7 +415,7 @@ pub mod pallet {
 		}
 
 		/// Unlist token from market.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::LOW + T::DbWeight::get().reads_writes(1, 1))]
 		pub fn unlist(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
@@ -437,7 +436,7 @@ pub mod pallet {
 		}
 
 		/// Update launch price of token.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::LOW + T::DbWeight::get().reads_writes(2, 1))]
 		pub fn set_launch_price(
 			origin: OriginFor<T>,
 			creator_id: CreatorId,
@@ -462,7 +461,7 @@ pub mod pallet {
 		}
 
 		/// Update price of token.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::LOW + T::DbWeight::get().reads_writes(1, 1))]
 		pub fn set_price(
 			origin: OriginFor<T>,
 			token_id: TokenId,
@@ -487,7 +486,7 @@ pub mod pallet {
 		}
 
 		/// Destroy token.
-		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(1,1))]
+		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(3, 3))]
 		pub fn burn(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use frame_support::weights::Weight;
 
 /// Debug weight value for low weighted calls
