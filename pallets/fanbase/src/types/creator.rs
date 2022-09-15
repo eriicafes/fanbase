@@ -2,7 +2,7 @@ use crate::Config;
 use frame_support::pallet_prelude::*;
 
 /// CreatorId will represent a domain name element hence is restricted to max 63 bytes
-pub type CreatorId = [u8; 63];
+pub type CreatorId = BoundedVec<u8, ConstU32<63>>;
 
 #[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]

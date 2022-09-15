@@ -59,7 +59,7 @@ impl<T: Config> Pallet<T> {
 	/// - One storage write to update token issuance `IssuanceNonce<T>`
 	pub fn unchecked_launch_transfer(
 		receiver: &T::AccountId,
-		launch_token_id: TokenId,
+		launch_token_id: &TokenId,
 	) -> Result<TokenId, Error<T>> {
 		// generate next token id
 		let next_token_id =
@@ -108,7 +108,7 @@ impl<T: Config> Pallet<T> {
 	pub fn unchecked_transfer(
 		owner: &T::AccountId,
 		receiver: &T::AccountId,
-		token_id: TokenId,
+		token_id: &TokenId,
 	) -> Result<(), Error<T>> {
 		Tokens::<T>::try_mutate(token_id, |token| {
 			// check if token exists
@@ -116,12 +116,12 @@ impl<T: Config> Pallet<T> {
 
 			// add token id to receiver
 			TokenIdsForAccount::<T>::try_mutate(receiver, |token_ids| {
-				token_ids.try_push(token_id).map_err(|_| Error::<T>::MaxTokensReached)
+				token_ids.try_push(token_id.clone()).map_err(|_| Error::<T>::MaxTokensReached)
 			})?;
 
 			// remove token id from owner
 			TokenIdsForAccount::<T>::mutate(owner, |token_ids| {
-				if let Some(index) = token_ids.iter().position(|id| *id == token_id) {
+				if let Some(index) = token_ids.iter().position(|id| id == token_id) {
 					// `swap_remove` because we do not care about ordering and it is faster than `remove`
 					token_ids.swap_remove(index);
 				}
@@ -141,7 +141,7 @@ impl<T: Config> Pallet<T> {
 	/// **Storage ops**
 	/// - One storage read-write to update launch token price `LaunchTokens<T>`
 	pub fn unchecked_set_launch_price(
-		launch_token_id: TokenId,
+		launch_token_id: &TokenId,
 		price: BalanceOf<T>,
 	) -> Result<(), Error<T>> {
 		LaunchTokens::<T>::try_mutate(launch_token_id, |launch_token| {
@@ -162,7 +162,7 @@ impl<T: Config> Pallet<T> {
 	/// **Storage ops**
 	/// - One storage read-write to update token price `Tokens<T>`
 	pub fn unchecked_set_price(
-		token_id: TokenId,
+		token_id: &TokenId,
 		price: Option<BalanceOf<T>>,
 	) -> Result<(), Error<T>> {
 		Tokens::<T>::try_mutate(token_id, |token| {
@@ -185,7 +185,7 @@ impl<T: Config> Pallet<T> {
 	/// - One storage read-write to remove token id from token owner account `TokenIdsForAccount<T>`
 	/// - One storage write to remove token `Tokens<T>`
 	/// - One storage read-write to update launch token internal issuance `LaunchTokens<T>`
-	pub fn unchecked_burn(token_id: TokenId) -> Result<(), Error<T>> {
+	pub fn unchecked_burn(token_id: &TokenId) -> Result<(), Error<T>> {
 		let token = Self::tokens(token_id).ok_or(Error::<T>::TokenNotFound)?;
 
 		// remove token id from owner
@@ -200,7 +200,7 @@ impl<T: Config> Pallet<T> {
 		Tokens::<T>::remove(&token.id);
 
 		// update launch token
-		LaunchTokens::<T>::mutate(token.launch_id, |launch_token| {
+		LaunchTokens::<T>::mutate(&token.launch_id, |launch_token| {
 			// unwrap because we are sure launch_token exists
 			launch_token.as_mut().unwrap().bump_destroyed_and_decrease_supply();
 		});
@@ -234,7 +234,7 @@ impl<T: Config> Pallet<T> {
 		token_id: &TokenId,
 	) -> Result<(), Error<T>> {
 		ensure!(
-			Self::tokens(token_id).map_or(false, |token| &token.owner == account),
+			Self::tokens(token_id).map_or(false, |token| token.owner == *account),
 			Error::<T>::NotOwner
 		);
 

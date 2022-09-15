@@ -6,13 +6,13 @@ use super::{aliases::BalanceOf, CreatorId, LaunchToken};
 pub type TokenId = u128;
 
 /// Token name limited to 255 bytes
-pub type TokenName = [u8; 255];
+pub type TokenName = BoundedVec<u8, ConstU32<255>>;
 
 /// Token mime-type limited to 255 bytes
-pub type MimeType = [u8; 255];
+pub type MimeType = BoundedVec<u8, ConstU32<255>>;
 
 /// Token metadata URI limited to 2048 bytes
-pub type MetatataUri = [u8; 2048];
+pub type MetatataUri = BoundedVec<u8, ConstU32<2048>>;
 
 #[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo, MaxEncodedLen)]
 #[scale_info(skip_type_params(T))]

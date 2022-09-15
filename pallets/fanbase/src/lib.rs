@@ -285,7 +285,7 @@ pub mod pallet {
 			Self::ensure_creator_owns_launch_token(&creator_id, &launch_token_id)?;
 
 			// transfer token to receiver
-			Self::unchecked_launch_transfer(&receiver, launch_token_id)?;
+			Self::unchecked_launch_transfer(&receiver, &launch_token_id)?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenInitialCollection);
@@ -320,7 +320,7 @@ pub mod pallet {
 			ensure!(bid_price >= launch_token.price, Error::<T>::BidPriceTooLow);
 
 			// transfer token to receiver from launch token
-			Self::unchecked_launch_transfer(&account, launch_token_id)?;
+			Self::unchecked_launch_transfer(&account, &launch_token_id)?;
 
 			// transfer funds
 			T::Currency::transfer(&account, &launch_token_owner, bid_price, KeepAlive)
@@ -357,7 +357,7 @@ pub mod pallet {
 			ensure!(bid_price >= token_price, Error::<T>::BidPriceTooLow);
 
 			// transfer token from owner to account
-			Self::unchecked_transfer(&token.owner, &account, token_id)?;
+			Self::unchecked_transfer(&token.owner, &account, &token_id)?;
 
 			// transfer funds
 			T::Currency::transfer(&account, &token.owner, bid_price, KeepAlive)
@@ -382,7 +382,7 @@ pub mod pallet {
 			Self::ensure_account_owns_token(&account, &token_id)?;
 
 			// transfer token to receiver
-			Self::unchecked_transfer(&account, &account, token_id)?;
+			Self::unchecked_transfer(&account, &account, &token_id)?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenTransferred);
@@ -406,7 +406,7 @@ pub mod pallet {
 			// ensure token does not have a price
 			ensure!(Self::get_token_price(&token_id).is_none(), Error::<T>::TokenAlreadyListed);
 
-			Self::unchecked_set_price(token_id, Some(price))?;
+			Self::unchecked_set_price(&token_id, Some(price))?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenListed);
@@ -427,7 +427,7 @@ pub mod pallet {
 			ensure!(Self::get_token_price(&token_id).is_some(), Error::<T>::TokenNotListed);
 
 			// update token price
-			Self::unchecked_set_price(token_id, None)?;
+			Self::unchecked_set_price(&token_id, None)?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenUnlisted);
@@ -452,7 +452,7 @@ pub mod pallet {
 			Self::ensure_creator_owns_launch_token(&creator_id, &launch_token_id)?;
 
 			// update launch token price
-			Self::unchecked_set_launch_price(launch_token_id, price)?;
+			Self::unchecked_set_launch_price(&launch_token_id, price)?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenLaunchPriceUpdated);
@@ -477,7 +477,7 @@ pub mod pallet {
 			ensure!(Self::get_token_price(&token_id).is_some(), Error::<T>::TokenNotListed);
 
 			// update token price
-			Self::unchecked_set_price(token_id, Some(price))?;
+			Self::unchecked_set_price(&token_id, Some(price))?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenPriceUpdated);
@@ -494,7 +494,7 @@ pub mod pallet {
 			// ensure account owns token
 			Self::ensure_account_owns_token(&account, &token_id)?;
 
-			Self::unchecked_burn(token_id)?;
+			Self::unchecked_burn(&token_id)?;
 
 			// emit events
 			Self::deposit_event(Event::<T>::TokenDestroyed);

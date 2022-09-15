@@ -16,15 +16,15 @@ impl<T: Config> Pallet<T> {
 		ensure!(Self::creators(&creator_id).is_none(), Error::<T>::CreatorAccountTaken);
 
 		// add creator id to account
-		CreatorIdsForAccount::<T>::try_mutate(account.clone(), |creator_ids| {
+		CreatorIdsForAccount::<T>::try_mutate(&account, |creator_ids| {
 			// return error if unable to append creator account
 			creator_ids
-				.try_push(creator_id)
+				.try_push(creator_id.clone())
 				.map_err(|_| Error::<T>::MaxCreatorAccountsReached)
 		})?;
 
 		// connect and save creator account
-		Creators::<T>::insert(creator_id, Creator::new(creator_id, account));
+		Creators::<T>::insert(&creator_id, Creator::new(creator_id.clone(), account));
 
 		Ok(())
 	}
@@ -46,19 +46,19 @@ impl<T: Config> Pallet<T> {
 		Self::ensure_account_owns_creator(&account, &creator_id)?;
 
 		// remove if no token references to this creator
-		if Self::launch_token_ids_for_creator(creator_id).len() == 0 {
+		if Self::launch_token_ids_for_creator(&creator_id).len() == 0 {
 			// remove since no launch tokens created by this creator
-			Creators::<T>::remove(creator_id);
+			Creators::<T>::remove(&creator_id);
 		} else {
 			// disconnect owner from creator
-			Creators::<T>::mutate(creator_id, |creator| {
+			Creators::<T>::mutate(&creator_id, |creator| {
 				// unwrap because we are sure creator exists
 				creator.as_mut().unwrap().disconnect();
 			})
 		}
 
 		// remove creator id from account
-		CreatorIdsForAccount::<T>::mutate(account, |creator_ids| {
+		CreatorIdsForAccount::<T>::mutate(&account, |creator_ids| {
 			if let Some(index) = creator_ids.iter().position(|id| *id == creator_id) {
 				// `swap_remove` because we do not care about ordering and it is faster than `remove`
 				creator_ids.swap_remove(index);
