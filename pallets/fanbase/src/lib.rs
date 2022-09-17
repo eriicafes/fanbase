@@ -123,35 +123,35 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// New creator account created
-		NewCreator,
+		/// New creator account created [account, creator]
+		NewCreator(T::AccountId, CreatorId),
 
-		/// Creator account dropped
-		DroppedCreator,
+		/// Creator account dropped [account, creator]
+		DroppedCreator(T::AccountId, CreatorId),
 
-		/// New token minted
-		TokenCreated,
+		/// New token minted [creator, launch token]
+		TokenCreated(CreatorId, TokenId),
 
-		/// Token acquired for the first time
-		TokenInitialCollection,
+		/// Token acquired for the first time [collector, creator, token]
+		TokenInitialCollection(T::AccountId, CreatorId, TokenId),
 
-		/// Token transferred to new owner
-		TokenTransferred,
+		/// Token transferred to new owner [previous owner, new owner, token]
+		TokenTransferred(T::AccountId, T::AccountId, TokenId),
 
-		/// Token listed on market
-		TokenListed,
+		/// Token listed on market [owner, token, price]
+		TokenListed(T::AccountId, TokenId, Option<BalanceOf<T>>),
 
-		/// Token unlisted from market
-		TokenUnlisted,
+		/// Token unlisted from market [owner, token, price]
+		TokenUnlisted(T::AccountId, TokenId, Option<BalanceOf<T>>),
 
-		/// Token launch price updated
-		TokenLaunchPriceUpdated,
+		/// Token launch price updated [creator, launch token, price]
+		TokenLaunchPriceUpdated(CreatorId, TokenId, Option<BalanceOf<T>>),
 
-		/// Token price updated
-		TokenPriceUpdated,
+		/// Token price updated [owner, token, price]
+		TokenPriceUpdated(T::AccountId, TokenId, Option<BalanceOf<T>>),
 
-		/// Token permanently destroyed
-		TokenDestroyed,
+		/// Token permanently destroyed [owner, token]
+		TokenDestroyed(T::AccountId, TokenId),
 	}
 
 	// ERRORS
@@ -221,10 +221,10 @@ pub mod pallet {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
 
-			Self::add_new_creator_to_account(creator_id, account)?;
+			Self::add_new_creator_to_account(creator_id.clone(), account.clone())?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::NewCreator);
+			Self::deposit_event(Event::<T>::NewCreator(account, creator_id));
 
 			Ok(())
 		}
@@ -237,10 +237,10 @@ pub mod pallet {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
 
-			Self::remove_creator_from_account(creator_id, account)?;
+			Self::remove_creator_from_account(creator_id.clone(), account.clone())?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::DroppedCreator);
+			Self::deposit_event(Event::<T>::DroppedCreator(account, creator_id));
 
 			Ok(())
 		}
@@ -260,10 +260,10 @@ pub mod pallet {
 			Self::ensure_account_owns_creator(&account, &creator_id)?;
 
 			// mint launch token
-			Self::unchecked_mint(creator_id, price, metadata)?;
+			let token_id = Self::unchecked_mint(creator_id.clone(), price, metadata)?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenCreated);
+			Self::deposit_event(Event::<T>::TokenCreated(creator_id, token_id));
 
 			Ok(())
 		}
@@ -285,10 +285,10 @@ pub mod pallet {
 			Self::ensure_creator_owns_launch_token(&creator_id, &launch_token_id)?;
 
 			// transfer token to receiver
-			Self::unchecked_launch_transfer(&receiver, &launch_token_id)?;
+			let token_id = Self::unchecked_launch_transfer(&receiver, &launch_token_id)?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenInitialCollection);
+			Self::deposit_event(Event::<T>::TokenInitialCollection(account, creator_id, token_id));
 
 			Ok(())
 		}
@@ -313,21 +313,26 @@ pub mod pallet {
 				Self::launch_tokens(launch_token_id).ok_or(Error::<T>::TokenNotFound)?;
 
 			// get launch token owner
-			let launch_token_owner = Self::get_launch_token_owner(&launch_token_id)
-				.ok_or(Error::<T>::TokenUnavailable)?;
+			let (launch_token_owner, launch_token_creator) =
+				Self::get_launch_token_owner(&launch_token_id)
+					.ok_or(Error::<T>::TokenUnavailable)?;
 
 			// ensure bid price is enough to cover purchase
 			ensure!(bid_price >= launch_token.price, Error::<T>::BidPriceTooLow);
 
 			// transfer token to receiver from launch token
-			Self::unchecked_launch_transfer(&account, &launch_token_id)?;
+			let token_id = Self::unchecked_launch_transfer(&account, &launch_token_id)?;
 
 			// transfer funds
 			T::Currency::transfer(&account, &launch_token_owner, bid_price, KeepAlive)
 				.expect("Funds not transferred after token transfer");
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenInitialCollection);
+			Self::deposit_event(Event::<T>::TokenInitialCollection(
+				account,
+				launch_token_creator.clone(),
+				token_id,
+			));
 
 			Ok(())
 		}
@@ -364,14 +369,18 @@ pub mod pallet {
 				.expect("Funds not transferred after token transfer");
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenTransferred);
+			Self::deposit_event(Event::<T>::TokenTransferred(token.owner, account, token_id));
 
 			Ok(())
 		}
 
 		/// Transfer token to account.
 		#[pallet::weight(weights::MID + T::DbWeight::get().reads_writes(3, 3))]
-		pub fn transfer(origin: OriginFor<T>, token_id: TokenId) -> DispatchResult {
+		pub fn transfer(
+			origin: OriginFor<T>,
+			token_id: TokenId,
+			receiver: T::AccountId,
+		) -> DispatchResult {
 			// allow only signed origin
 			let account = ensure_signed(origin)?;
 
@@ -382,10 +391,10 @@ pub mod pallet {
 			Self::ensure_account_owns_token(&account, &token_id)?;
 
 			// transfer token to receiver
-			Self::unchecked_transfer(&account, &account, &token_id)?;
+			Self::unchecked_transfer(&account, &receiver, &token_id)?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenTransferred);
+			Self::deposit_event(Event::<T>::TokenTransferred(account, receiver, token_id));
 
 			Ok(())
 		}
@@ -409,7 +418,7 @@ pub mod pallet {
 			Self::unchecked_set_price(&token_id, Some(price))?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenListed);
+			Self::deposit_event(Event::<T>::TokenListed(account, token_id, Some(price)));
 
 			Ok(())
 		}
@@ -430,7 +439,7 @@ pub mod pallet {
 			Self::unchecked_set_price(&token_id, None)?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenUnlisted);
+			Self::deposit_event(Event::<T>::TokenUnlisted(account, token_id, None));
 
 			Ok(())
 		}
@@ -455,7 +464,11 @@ pub mod pallet {
 			Self::unchecked_set_launch_price(&launch_token_id, price)?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenLaunchPriceUpdated);
+			Self::deposit_event(Event::<T>::TokenLaunchPriceUpdated(
+				creator_id,
+				launch_token_id,
+				Some(price),
+			));
 
 			Ok(())
 		}
@@ -480,7 +493,7 @@ pub mod pallet {
 			Self::unchecked_set_price(&token_id, Some(price))?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenPriceUpdated);
+			Self::deposit_event(Event::<T>::TokenPriceUpdated(account, token_id, Some(price)));
 
 			Ok(())
 		}
@@ -497,7 +510,7 @@ pub mod pallet {
 			Self::unchecked_burn(&token_id)?;
 
 			// emit events
-			Self::deposit_event(Event::<T>::TokenDestroyed);
+			Self::deposit_event(Event::<T>::TokenDestroyed(account, token_id));
 
 			Ok(())
 		}

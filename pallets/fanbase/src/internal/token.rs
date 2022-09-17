@@ -246,10 +246,13 @@ impl<T: Config> Pallet<T> {
 	/// **Storage ops**
 	/// - One storage read to get launch token by id `LaunchTokens<T>`
 	/// - One storage read to get creator of launch token `Creators<T>`
-	pub fn get_launch_token_owner(launch_token_id: &TokenId) -> Option<T::AccountId> {
-		Self::launch_tokens(launch_token_id).and_then(|launch_token| {
-			Self::creators(launch_token.creator).and_then(|creator| creator.owner)
-		})
+	pub fn get_launch_token_owner(launch_token_id: &TokenId) -> Option<(T::AccountId, CreatorId)> {
+		let creator = Self::launch_tokens(launch_token_id)
+			.and_then(|launch_token| Self::creators(launch_token.creator))?;
+
+		let owner = creator.owner?;
+
+		Some((owner, creator.id))
 	}
 
 	/// Get token price if token exists and has a price.
